@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Rota Sensorial — mapeamento colaborativo de ambientes acessíveis</title>
+  <meta name="description" content="Rota Sensorial é um mapeamento colaborativo de locais quanto a ruído, iluminação, tempo de espera e espaços de recolhimento, pensado para pessoas autistas e neurodivergentes." />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div id="app">
+
+    <a class="skip-link" href="#conteudo-principal">Pular para o conteúdo</a>
+
+    <header class="site-header">
+      <div class="wrap">
+        <p class="wordmark">Rota <span>Sensorial</span></p>
+        <p class="tagline">Saiba antes de ir. Ambientes avaliados por quem sente.</p>
+      </div>
+    </header>
+
+    <main id="conteudo-principal" class="wrap">
+
+      <!-- Busca -->
+      <section class="busca" aria-label="Buscar locais">
+        <label class="campo-label" for="campo-busca">Buscar por categoria ou região</label>
+        <div class="busca-linha">
+          <input
+            id="campo-busca"
+            type="search"
+            v-model="termoBusca"
+            placeholder="ex.: mercado, Campo Grande, praça..."
+            autocomplete="off"
+          />
+        </div>
+      </section>
+
+      <!-- Locais -->
+      <section class="locais" aria-labelledby="titulo-locais">
+        <div class="secao-cabecalho">
+          <h2 id="titulo-locais">{{ termoBusca ? 'Resultados da busca' : 'Locais mais tranquilos' }}</h2>
+          <p class="secao-legenda" v-if="locaisFiltrados.length">{{ locaisFiltrados.length }} {{ locaisFiltrados.length === 1 ? 'local encontrado' : 'locais encontrados' }}</p>
+        </div>
+
+        <p class="estado-vazio" v-if="!locaisFiltrados.length">
+          Nenhum local por aqui ainda. Que tal <button class="link-botao" @click="abrirCadastro">cadastrar o primeiro</button>?
+        </p>
+
+        <ul class="grade-locais" v-else>
+          <li class="cartao-local" v-for="local in locaisFiltrados" :key="local.id">
+            <div class="cartao-topo">
+              <h3>{{ local.nome }}</h3>
+              <span class="categoria-chip">{{ local.categoria }}</span>
+            </div>
+            <p class="endereco">{{ local.endereco }}</p>
+
+            <div class="medidor-grupo" v-if="mediasPorLocal[local.id]">
+              <div class="medidor" v-for="item in medidorLocal(local.id)" :key="item.rotulo">
+                <div class="medidor-rotulo">
+                  <span>{{ item.rotulo }}</span>
+                  <span class="medidor-valor">{{ item.texto }}</span>
+                </div>
+                <div class="medidor-trilho" role="img" :aria-label="item.rotulo + ': ' + item.texto">
+                  <div class="medidor-preenchido" :class="item.classe" :style="{ width: item.percentual + '%' }"></div>
+                </div>
+              </div>
+              <p class="badge-recolhimento" v-if="mediasPorLocal[local.id].temRecolhimento">
+                Possui espaço de recolhimento
+              </p>
+              <p class="contagem-avaliacoes">{{ mediasPorLocal[local.id].total }} {{ mediasPorLocal[local.id].total === 1 ? 'avaliação' : 'avaliações' }}</p>
+            </div>
+            <p class="sem-avaliacao" v-else>Ainda sem avaliações — seja a primeira pessoa a avaliar.</p>
+
+            <button class="botao-secundario" @click="abrirAvaliacao(local)">Avaliar este local</button>
+          </li>
+        </ul>
+      </section>
+
+      <!-- Cadastro -->
+      <section class="cadastro" aria-labelledby="titulo-cadastro">
+        <button
+          class="botao-primario botao-cadastro-toggle"
+          @click="mostrarCadastro = !mostrarCadastro"
+          :aria-expanded="mostrarCadastro.toString()"
+          aria-controls="painel-cadastro"
+          ref="botaoCadastro"
+        >
+          {{ mostrarCadastro ? 'Fechar formulário' : '+ Cadastrar novo local' }}
+        </button>
+
+        <form
+          id="painel-cadastro"
+          class="painel-formulario"
+          v-if="mostrarCadastro"
+          @submit.prevent="cadastrarLocal"
+        >
+          <h2 id="titulo-cadastro">Cadastrar local</h2>
+
+          <div class="campo">
+            <label for="novo-nome">Nome do local</label>
+            <input id="novo-nome" type="text" v-model.trim="novoLocal.nome" required />
+          </div>
+
+          <div class="campo">
+            <label for="novo-endereco">Endereço ou região</label>
+            <input id="novo-endereco" type="text" v-model.trim="novoLocal.endereco" required placeholder="Bairro, cidade..." />
+          </div>
+
+          <div class="campo">
+            <label for="novo-categoria">Categoria</label>
+            <select id="novo-categoria" v-model="novoLocal.categoria" required>
+              <option disabled value="">Selecione</option>
+              <option v-for="cat in categorias" :key="cat" :value="cat">{{ cat }}</option>
+            </select>
+          </div>
+
+          <p class="form-erro" v-if="erroCadastro" role="alert">{{ erroCadastro }}</p>
+
+          <button type="submit" class="botao-primario">Salvar local</button>
+        </form>
+      </section>
+
+      <!-- Avaliação -->
+      <section
+        class="avaliacao-painel"
+        v-if="localEmAvaliacao"
+        aria-labelledby="titulo-avaliacao"
+        ref="painelAvaliacao"
+      >
+        <div class="avaliacao-cabecalho">
+          <h2 id="titulo-avaliacao">Avaliar: {{ localEmAvaliacao.nome }}</h2>
+          <button class="botao-fechar" @click="fecharAvaliacao" aria-label="Fechar avaliação">×</button>
+        </div>
+
+        <form @submit.prevent="enviarAvaliacao">
+          <div class="campo-slider" v-for="criterio in criteriosAvaliacao" :key="criterio.chave">
+            <label :for="'slider-' + criterio.chave">
+              {{ criterio.rotulo }}
+              <span class="slider-valor">{{ criterio.textos[novaAvaliacao[criterio.chave] - 1] }}</span>
+            </label>
+            <input
+              :id="'slider-' + criterio.chave"
+              type="range"
+              min="1"
+              max="5"
+              step="1"
+              v-model.number="novaAvaliacao[criterio.chave]"
+              required
+            />
+          </div>
+
+          <div class="campo campo-checkbox">
+            <input id="tem-recolhimento" type="checkbox" v-model="novaAvaliacao.temRecolhimento" />
+            <label for="tem-recolhimento">Este local tem um espaço mais reservado para se afastar do movimento</label>
+          </div>
+
+          <div class="campo">
+            <label for="comentario">Comentário (opcional)</label>
+            <textarea id="comentario" v-model.trim="novaAvaliacao.comentario" rows="3" maxlength="280"></textarea>
+          </div>
+
+          <div class="campo campo-checkbox">
+            <input id="avaliacao-anonima" type="checkbox" v-model="novaAvaliacao.anonima" />
+            <label for="avaliacao-anonima">Enviar avaliação de forma anônima</label>
+          </div>
+
+          <p class="form-erro" v-if="erroAvaliacao" role="alert">{{ erroAvaliacao }}</p>
+
+          <button type="submit" class="botao-primario">Enviar avaliação</button>
+        </form>
+      </section>
+
+    </main>
+
+    <footer class="site-footer">
+      <div class="wrap">
+        <p>Rota Sensorial — projeto integrador, UFMS Digital, 2026.</p>
+      </div>
+    </footer>
+  </div>
+
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
