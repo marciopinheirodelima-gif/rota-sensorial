@@ -1,40 +1,81 @@
 # Rota Sensorial
 
-Mapeamento colaborativo de locais quanto a critérios sensoriais (ruído, iluminação,
-tempo de espera e existência de espaços de recolhimento), pensado para pessoas
-autistas e neurodivergentes planejarem seus deslocamentos com mais autonomia.
+Mapeamento colaborativo de locais quanto a critérios sensoriais (ruído,
+iluminação, tempo de espera e existência de espaços de recolhimento),
+pensado para pessoas autistas e neurodivergentes planejarem seus
+deslocamentos com mais autonomia.
 
 Projeto desenvolvido para a disciplina **Projeto Integrador em Tecnologia da
 Informação II** — UFMS Digital, 2026/2. Autor: Márcio Pinheiro de Lima.
 
 ## Como rodar
 
-Este é um projeto front-end estático, sem necessidade de build ou instalação de
-dependências (Vue.js é carregado via CDN diretamente no `index.html`).
+O projeto tem duas partes: uma **API** (Node.js/Express + SQLite) e o
+**front-end** (HTML/CSS/JS com Vue 3 via CDN). É preciso rodar as duas.
 
-1. Clone o repositório.
-2. Abra `index.html` no navegador — ou, para evitar restrições de CORS do
-   navegador com `localStorage`, sirva a pasta com um servidor simples:
-   ```bash
-   python3 -m http.server 8000
-   ```
-   e acesse `http://localhost:8000`.
+### 1. Backend (API + banco de dados)
 
-Os dados de locais e avaliações ficam salvos no `localStorage` do navegador,
-já que esta etapa do projeto ainda não inclui um backend (ver seção
-"Próximos passos").
+```bash
+cd backend
+npm install
+npm start
+```
+
+A API sobe em `http://localhost:3000`. Na primeira execução, o arquivo
+`backend/db/rota_sensorial.db` é criado automaticamente a partir de
+`backend/db/schema.sql`, já com dois locais de exemplo.
+
+### 2. Front-end
+
+Em outro terminal, na raiz do projeto:
+
+```bash
+python3 -m http.server 8000
+```
+
+e acesse `http://localhost:8000`. (Também funciona com a extensão Live
+Server do VS Code, clicando com o botão direito em `index.html`.)
+
+> O front-end espera a API em `http://localhost:3000/api` — se o backend
+> não estiver rodando, a página mostra um aviso de conexão.
 
 ## Estrutura do projeto
 
 ```
 rota-sensorial/
-├── index.html      # estrutura HTML5 semântica da aplicação
-├── css/style.css   # estilização responsiva, mobile-first
-├── js/app.js       # lógica da aplicação (Vue 3, via CDN)
+├── index.html          # estrutura HTML5 semântica da aplicação
+├── css/style.css        # estilização responsiva, mobile-first
+├── js/app.js             # lógica da aplicação (Vue 3, via CDN, consome a API)
+├── backend/
+│   ├── server.js          # API REST (Express) — CRUD completo
+│   ├── package.json
+│   └── db/
+│       ├── schema.sql       # entidades, relacionamentos e restrições
+│       ├── manipulacoes.sql # exemplos de INSERT/SELECT/UPDATE/DELETE
+│       └── database.js      # inicializa o banco a partir do schema.sql
 └── README.md
 ```
 
-## Decisões técnicas do Módulo 2
+## Modelagem do banco de dados
+
+Banco relacional **SQLite**, escolhido por não exigir instalação de
+servidor separado — todo o banco é um único arquivo (`rota_sensorial.db`),
+o que facilita rodar e avaliar o projeto em qualquer máquina. Três
+entidades, com chaves estrangeiras garantindo integridade referencial:
+
+- **locais** (`id`, `nome`, `endereco`, `categoria`, `removido`, `criado_em`, `atualizado_em`)
+- **avaliacoes** (`id`, `local_id` → `locais.id`, `usuario_id` → `usuarios.id`, `ruido`, `iluminacao`, `tempo_espera`, `tem_recolhimento`, `comentario`, `anonima`, `removido`, `criado_em`)
+- **usuarios** (`id`, `identificador`, `criado_em`)
+
+Restrições aplicadas: `NOT NULL` nos campos obrigatórios, `CHECK` para
+limitar `categoria` a valores válidos e as notas sensoriais à escala de
+1 a 5, `FOREIGN KEY` com `ON DELETE CASCADE`/`ON DELETE SET NULL`, e um
+campo `removido` para *soft delete* (o registro é marcado como removido
+em vez de apagado, preservando o histórico — prática discutida nas
+videoaulas do Módulo 3). O detalhamento completo está em
+[`backend/db/schema.sql`](backend/db/schema.sql).
+
+## Decisões técnicas do Módulo 2 (recapitulando)
 
 - **Framework**: Vue.js 3, conforme indicado nas videoaulas do módulo. Optou-se
   pela versão via CDN (sem etapa de build) para manter a entrega simples e
@@ -54,19 +95,33 @@ rota-sensorial/
   local exibe três barras (ruído, iluminação, tempo de espera) com uma escala
   de cor calma → intensa, tornando a informação sensorial mais legível de
   relance — elemento pensado especificamente para o propósito do app.
-- **Regras implementadas nesta entrega**: RF01 (cadastrar local), RF02 (avaliar
-  local), RF03 (buscar por categoria/região), RF04 (destacar locais mais
-  calmos na tela inicial), RF05 (avaliação anônima) e RNF04 (impedir envio de
-  avaliação sem os três critérios preenchidos).
+
+## Requisitos implementados
+
+RF01 (cadastrar local), RF02 (avaliar local), RF03 (buscar por
+categoria/região), RF04 (destacar locais mais calmos), RF05 (avaliação
+anônima), RNF01 (baixo estímulo visual), RNF03 (acesso via navegador) e
+RNF04 (impedir avaliação sem nota) — mais, a partir do Módulo 3, edição e
+remoção (soft delete) de locais, cobrindo as quatro operações de
+manipulação de dados exigidas (inserção, consulta, atualização, remoção).
+
+## Controle de versão
+
+O repositório segue o modelo de branch principal (`main`) estável, com
+branches específicas por funcionalidade (ex.: `feature/banco-de-dados`),
+integradas por *pull request*, e mensagens de commit semânticas (prefixos
+como `feat:`, `fix:`, `docs:`), conforme praticado nas aulas do Módulo 3.
 
 ## Próximos passos
 
-- Implementar a API de backend (Node.js/Express, conforme planejado no
-  Módulo 1) e um banco de dados relacional, substituindo o `localStorage`.
+- Adicionar autenticação simples de usuários (hoje `usuarios` existe no
+  esquema, mas ainda não há cadastro/login na interface).
 - Validar a interface e o conjunto de requisitos com outras pessoas autistas
   e neurodivergentes (entrevistas semiestruturadas).
 - Avaliar a implementação de um mapa interativo (RF06), hoje fora do escopo
   do MVP.
+- Configurar integração contínua (GitHub Actions) para rodar verificações
+  automáticas a cada push, conforme discutido nas aulas do Módulo 3.
 
 ## Licença
 

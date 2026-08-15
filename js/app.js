@@ -1,58 +1,44 @@
 /* ============================================
    Rota Sensorial — lógica da aplicação (Vue 3)
-   Implementa os requisitos definidos no
-   relatório do Módulo 1 (RF01–RF05, RNF01–RNF04).
-   Dados persistidos em localStorage: sem backend
-   nesta etapa, mas o modelo de dados já reflete
-   as três tabelas planejadas (locais, avaliacoes,
-   usuarios), prontas para uma futura API.
+   Módulo 3: os dados deixam de ficar apenas no
+   localStorage e passam a ser lidos/gravados via
+   API (Node.js/Express + SQLite), que implementa
+   as operações de inserção, consulta, atualização
+   e remoção sobre o banco de dados relacional.
    ============================================ */
 
 const { createApp } = Vue;
 
-const CHAVE_LOCAIS = "rota-sensorial:locais";
-const CHAVE_AVALIACOES = "rota-sensorial:avaliacoes";
+const API_BASE = "http://localhost:3000/api";
 
-function carregar(chave, padrao) {
-  try {
-    const bruto = localStorage.getItem(chave);
-    return bruto ? JSON.parse(bruto) : padrao;
-  } catch (erro) {
-    console.error("Não foi possível ler dados salvos:", erro);
-    return padrao;
+async function chamarApi(caminho, opcoes = {}) {
+  const resposta = await fetch(API_BASE + caminho, {
+    headers: { "Content-Type": "application/json" },
+    ...opcoes,
+  });
+
+  if (!resposta.ok) {
+    let mensagem = "Não foi possível completar a operação.";
+    try {
+      const corpo = await resposta.json();
+      mensagem = corpo.erro || mensagem;
+    } catch (_) {}
+    throw new Error(mensagem);
   }
+
+  if (resposta.status === 204) return null;
+  return resposta.json();
 }
-
-function salvar(chave, valor) {
-  try {
-    localStorage.setItem(chave, JSON.stringify(valor));
-  } catch (erro) {
-    console.error("Não foi possível salvar dados:", erro);
-  }
-}
-
-// Alguns locais de exemplo, só para a interface não nascer vazia.
-// Representam a tabela "locais" do modelo de dados do Módulo 1.
-const LOCAIS_EXEMPLO = [
-  { id: "loc-1", nome: "Praça do Rádio", endereco: "Centro, Campo Grande - MS", categoria: "Praça" },
-  { id: "loc-2", nome: "Mercadão Municipal", endereco: "Vila Cidade Morena, Campo Grande - MS", categoria: "Mercado" },
-];
-
-const AVALIACOES_EXEMPLO = [
-  {
-    id: "av-1", localId: "loc-1",
-    ruido: 2, iluminacao: 2, tempoEspera: 1,
-    temRecolhimento: true, comentario: "Bem tranquila de manhã cedo.", anonima: false,
-  },
-];
 
 const app = createApp({
   data() {
     return {
-      locais: carregar(CHAVE_LOCAIS, LOCAIS_EXEMPLO),
-      avaliacoes: carregar(CHAVE_AVALIACOES, AVALIACOES_EXEMPLO),
+      locais: [],
+      carregando: true,
+      erroConexao: "",
 
       termoBusca: "",
+      buscaDebounce: null,
 
       categorias: ["Mercado", "Praça", "Consultório", "Restaurante", "Loja", "Outro"],
 
@@ -60,9 +46,14 @@ const app = createApp({
       novoLocal: { nome: "", endereco: "", categoria: "" },
       erroCadastro: "",
 
+      localEmEdicao: null,
+      edicaoLocal: { nome: "", endereco: "", categoria: "" },
+      erroEdicao: "",
+
       localEmAvaliacao: null,
       novaAvaliacao: this.avaliacaoEmBranco(),
       erroAvaliacao: "",
+      enviandoAvaliacao: false,
 
       criteriosAvaliacao: [
         { chave: "ruido", rotulo: "Nível de ruído", textos: ["Muito baixo", "Baixo", "Moderado", "Alto", "Muito alto"] },
@@ -73,69 +64,51 @@ const app = createApp({
   },
 
   computed: {
-    // RF03 — busca por categoria ou região (endereço)
     locaisFiltrados() {
-      const termo = this.termoBusca.trim().toLowerCase();
-      const lista = !termo
-        ? this.locais
-        : this.locais.filter(
-            (l) =>
-              l.categoria.toLowerCase().includes(termo) ||
-              l.endereco.toLowerCase().includes(termo) ||
-              l.nome.toLowerCase().includes(termo)
-          );
-
-      // RF04 — locais mais bem avaliados em destaque (só quando não há busca ativa)
-      if (!termo) {
-        return [...lista].sort((a, b) => {
-          const mediaA = this.calcularMedia(a.id);
-          const mediaB = this.calcularMedia(b.id);
-          return mediaA - mediaB; // menor "intensidade sensorial" primeiro = mais calmo primeiro
-        });
-      }
-      return lista;
+      return this.locais;
     },
+  },
 
-    mediasPorLocal() {
-      const mapa = {};
-      for (const local of this.locais) {
-        const avals = this.avaliacoes.filter((a) => a.localId === local.id);
-        if (!avals.length) continue;
-        mapa[local.id] = {
-          ruido: media(avals.map((a) => a.ruido)),
-          iluminacao: media(avals.map((a) => a.iluminacao)),
-          tempoEspera: media(avals.map((a) => a.tempoEspera)),
-          temRecolhimento: avals.some((a) => a.temRecolhimento),
-          total: avals.length,
-        };
-      }
-      return mapa;
+  mounted() {
+    this.buscarLocais();
+  },
+
+  watch: {
+    termoBusca() {
+      clearTimeout(this.buscaDebounce);
+      this.buscaDebounce = setTimeout(() => this.buscarLocais(), 300);
     },
   },
 
   methods: {
     avaliacaoEmBranco() {
-      return {
-        ruido: 3,
-        iluminacao: 3,
-        tempoEspera: 3,
-        temRecolhimento: false,
-        comentario: "",
-        anonima: false,
+      return { ruido: 3, iluminacao: 3, tempoEspera: 3, temRecolhimento: false, comentario: "", anonima: false };
+    },
+
+    // RF03 — busca por categoria/região · RF04 — locais mais calmos primeiro
+    // (o filtro e a ordenação são resolvidos em SQL, na API)
+    async buscarLocais() {
+      this.carregando = true;
+      this.erroConexao = "";
+      try {
+        const query = this.termoBusca.trim() ? `?q=${encodeURIComponent(this.termoBusca.trim())}` : "";
+        this.locais = await chamarApi(`/locais${query}`);
+      } catch (erro) {
+        this.erroConexao = "Não foi possível conectar à API em " + API_BASE + ". Verifique se o backend está rodando (cd backend && npm start).";
+      } finally {
+        this.carregando = false;
+      }
+    },
+
+    medidorLocal(local) {
+      if (!local.totalAvaliacoes) return [];
+      const valores = {
+        ruido: local.mediaRuido,
+        iluminacao: local.mediaIluminacao,
+        tempoEspera: local.mediaTempoEspera,
       };
-    },
-
-    calcularMedia(localId) {
-      const dados = this.mediasPorLocal[localId];
-      if (!dados) return 3; // sem avaliação ainda, não prioriza nem penaliza
-      return (dados.ruido + dados.iluminacao + dados.tempoEspera) / 3;
-    },
-
-    medidorLocal(localId) {
-      const dados = this.mediasPorLocal[localId];
-      if (!dados) return [];
       return this.criteriosAvaliacao.map((c) => {
-        const valor = dados[c.chave];
+        const valor = valores[c.chave];
         return {
           rotulo: c.rotulo,
           texto: c.textos[Math.round(valor) - 1],
@@ -150,27 +123,62 @@ const app = createApp({
       this.$nextTick(() => this.$refs.botaoCadastro?.scrollIntoView({ behavior: "smooth", block: "center" }));
     },
 
-    // RF01 — cadastrar local
-    cadastrarLocal() {
+    // RF01 — cadastrar local (INSERT)
+    async cadastrarLocal() {
       this.erroCadastro = "";
       const { nome, endereco, categoria } = this.novoLocal;
-
       if (!nome || !endereco || !categoria) {
         this.erroCadastro = "Preencha nome, endereço e categoria para cadastrar o local.";
         return;
       }
+      try {
+        await chamarApi("/locais", { method: "POST", body: JSON.stringify(this.novoLocal) });
+        this.novoLocal = { nome: "", endereco: "", categoria: "" };
+        this.mostrarCadastro = false;
+        await this.buscarLocais();
+      } catch (erro) {
+        this.erroCadastro = erro.message;
+      }
+    },
 
-      const local = {
-        id: "loc-" + Date.now(),
-        nome,
-        endereco,
-        categoria,
-      };
-      this.locais.push(local);
-      salvar(CHAVE_LOCAIS, this.locais);
+    // Edição de local (UPDATE)
+    abrirEdicao(local) {
+      this.localEmEdicao = local;
+      this.edicaoLocal = { nome: local.nome, endereco: local.endereco, categoria: local.categoria };
+      this.erroEdicao = "";
+    },
 
-      this.novoLocal = { nome: "", endereco: "", categoria: "" };
-      this.mostrarCadastro = false;
+    fecharEdicao() {
+      this.localEmEdicao = null;
+      this.erroEdicao = "";
+    },
+
+    async salvarEdicao() {
+      this.erroEdicao = "";
+      const { nome, endereco, categoria } = this.edicaoLocal;
+      if (!nome || !endereco || !categoria) {
+        this.erroEdicao = "Preencha nome, endereço e categoria.";
+        return;
+      }
+      try {
+        await chamarApi(`/locais/${this.localEmEdicao.id}`, { method: "PUT", body: JSON.stringify(this.edicaoLocal) });
+        this.fecharEdicao();
+        await this.buscarLocais();
+      } catch (erro) {
+        this.erroEdicao = erro.message;
+      }
+    },
+
+    // Remoção de local (DELETE — soft delete no backend)
+    async removerLocal(local) {
+      const confirmar = window.confirm(`Remover "${local.nome}"? As avaliações associadas deixarão de aparecer, mas o histórico é preservado no banco.`);
+      if (!confirmar) return;
+      try {
+        await chamarApi(`/locais/${local.id}`, { method: "DELETE" });
+        await this.buscarLocais();
+      } catch (erro) {
+        alert(erro.message);
+      }
     },
 
     abrirAvaliacao(local) {
@@ -185,37 +193,29 @@ const app = createApp({
       this.erroAvaliacao = "";
     },
 
-    // RF02 — avaliar local existente · RNF04 — impede envio sem nota preenchida
-    enviarAvaliacao() {
+    // RF02 — avaliar local (INSERT) · RNF04 — validação client-side + server-side
+    async enviarAvaliacao() {
       this.erroAvaliacao = "";
       const { ruido, iluminacao, tempoEspera } = this.novaAvaliacao;
-
       if (!ruido || !iluminacao || !tempoEspera) {
         this.erroAvaliacao = "Preencha os três critérios sensoriais antes de enviar.";
         return;
       }
-
-      const avaliacao = {
-        id: "av-" + Date.now(),
-        localId: this.localEmAvaliacao.id,
-        ruido: Number(ruido),
-        iluminacao: Number(iluminacao),
-        tempoEspera: Number(tempoEspera),
-        temRecolhimento: this.novaAvaliacao.temRecolhimento,
-        comentario: this.novaAvaliacao.comentario,
-        anonima: this.novaAvaliacao.anonima, // RF05 — avaliação anônima
-      };
-
-      this.avaliacoes.push(avaliacao);
-      salvar(CHAVE_AVALIACOES, this.avaliacoes);
-
-      this.fecharAvaliacao();
+      this.enviandoAvaliacao = true;
+      try {
+        await chamarApi(`/locais/${this.localEmAvaliacao.id}/avaliacoes`, {
+          method: "POST",
+          body: JSON.stringify(this.novaAvaliacao),
+        });
+        this.fecharAvaliacao();
+        await this.buscarLocais();
+      } catch (erro) {
+        this.erroAvaliacao = erro.message;
+      } finally {
+        this.enviandoAvaliacao = false;
+      }
     },
   },
 });
-
-function media(lista) {
-  return lista.reduce((soma, v) => soma + v, 0) / lista.length;
-}
 
 app.mount("#app");
