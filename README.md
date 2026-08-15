@@ -6,7 +6,7 @@ pensado para pessoas autistas e neurodivergentes planejarem seus
 deslocamentos com mais autonomia.
 
 Projeto desenvolvido para a disciplina **Projeto Integrador em Tecnologia da
-Informação II** — UFMS Digital, 2026/2. Autor: Márcio Pinheiro de Lima.
+Informação II**, UFMS Digital, 2026/2. Autor: Márcio Pinheiro de Lima.
 
 ## Como rodar
 
@@ -36,7 +36,7 @@ python3 -m http.server 8000
 e acesse `http://localhost:8000`. (Também funciona com a extensão Live
 Server do VS Code, clicando com o botão direito em `index.html`.)
 
-> O front-end espera a API em `http://localhost:3000/api` — se o backend
+> O front-end espera a API em `http://localhost:3000/api`. Se o backend
 > não estiver rodando, a página mostra um aviso de conexão.
 
 ## Estrutura do projeto
@@ -47,7 +47,7 @@ rota-sensorial/
 ├── css/style.css        # estilização responsiva, mobile-first
 ├── js/app.js             # lógica da aplicação (Vue 3, via CDN, consome a API)
 ├── backend/
-│   ├── server.js          # API REST (Express) — CRUD completo
+│   ├── server.js          # API REST (Express), CRUD completo
 │   ├── package.json
 │   └── db/
 │       ├── schema.sql       # entidades, relacionamentos e restrições
@@ -59,9 +59,10 @@ rota-sensorial/
 ## Modelagem do banco de dados
 
 Banco relacional **SQLite**, escolhido por não exigir instalação de
-servidor separado — todo o banco é um único arquivo (`rota_sensorial.db`),
-o que facilita rodar e avaliar o projeto em qualquer máquina. Três
-entidades, com chaves estrangeiras garantindo integridade referencial:
+servidor separado. Todo o banco fica em um único arquivo
+(`rota_sensorial.db`), o que facilita rodar e avaliar o projeto em
+qualquer máquina. Três entidades, com chaves estrangeiras garantindo
+integridade referencial:
 
 - **locais** (`id`, `nome`, `endereco`, `categoria`, `removido`, `criado_em`, `atualizado_em`)
 - **avaliacoes** (`id`, `local_id` → `locais.id`, `usuario_id` → `usuarios.id`, `ruido`, `iluminacao`, `tempo_espera`, `tem_recolhimento`, `comentario`, `anonima`, `removido`, `criado_em`)
@@ -70,9 +71,9 @@ entidades, com chaves estrangeiras garantindo integridade referencial:
 Restrições aplicadas: `NOT NULL` nos campos obrigatórios, `CHECK` para
 limitar `categoria` a valores válidos e as notas sensoriais à escala de
 1 a 5, `FOREIGN KEY` com `ON DELETE CASCADE`/`ON DELETE SET NULL`, e um
-campo `removido` para *soft delete* (o registro é marcado como removido
-em vez de apagado, preservando o histórico — prática discutida nas
-videoaulas do Módulo 3). O detalhamento completo está em
+campo `removido` para *soft delete*: o registro é marcado como removido
+em vez de apagado, o que preserva o histórico. Essa prática foi
+discutida nas videoaulas do Módulo 3. O detalhamento completo está em
 [`backend/db/schema.sql`](backend/db/schema.sql).
 
 ## Decisões técnicas do Módulo 2 (recapitulando)
@@ -88,20 +89,20 @@ videoaulas do Módulo 3). O detalhamento completo está em
   e `960px` ajustando a grade de locais de 1 para 2 e 3 colunas.
 - **Baixo estímulo visual (RNF01)**: paleta de tons terrosos e dessaturados
   (sem branco puro nem cores vibrantes), tipografia
-  [Atkinson Hyperlegible](https://brailleinstitute.org/freefont) — fonte
-  desenvolvida especificamente para legibilidade e acessibilidade — e
+  [Atkinson Hyperlegible](https://brailleinstitute.org/freefont), fonte
+  desenvolvida especificamente para legibilidade e acessibilidade, e
   animações mínimas, respeitando `prefers-reduced-motion`.
 - **Medidor sensorial**: em vez de estrelas ou notas numéricas isoladas, cada
   local exibe três barras (ruído, iluminação, tempo de espera) com uma escala
-  de cor calma → intensa, tornando a informação sensorial mais legível de
-  relance — elemento pensado especificamente para o propósito do app.
+  de cor calma para intensa, tornando a informação sensorial mais legível de
+  relance. Foi um elemento pensado especificamente para o propósito do app.
 
 ## Requisitos implementados
 
 RF01 (cadastrar local), RF02 (avaliar local), RF03 (buscar por
 categoria/região), RF04 (destacar locais mais calmos), RF05 (avaliação
 anônima), RNF01 (baixo estímulo visual), RNF03 (acesso via navegador) e
-RNF04 (impedir avaliação sem nota) — mais, a partir do Módulo 3, edição e
+RNF04 (impedir avaliação sem nota). Também, a partir do Módulo 3, edição e
 remoção (soft delete) de locais, cobrindo as quatro operações de
 manipulação de dados exigidas (inserção, consulta, atualização, remoção).
 
@@ -125,4 +126,4 @@ como `feat:`, `fix:`, `docs:`), conforme praticado nas aulas do Módulo 3.
 
 ## Licença
 
-Projeto acadêmico, UFMS Digital — 2026/2.
+Projeto acadêmico, UFMS Digital, 2026/2.
